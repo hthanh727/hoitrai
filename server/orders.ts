@@ -1,7 +1,7 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 import { z } from "zod";
-import { requireOrderScope } from "./auth";
+import { requireAdmin, requireOrderScope } from "./auth";
 import { transaction } from "./db";
 import { cashStatus, planOrder } from "./domain";
 import { HttpError } from "./errors";
@@ -247,3 +247,91 @@ export async function cancelOrder(user: User, id: string): Promise<Order> {
     return mapOrder(updated);
   });
 }
+
+export async function deleteOrder(
+  user: User,
+  id: string,
+): Promise<{ success: boolean; id: string }> {
+  return transaction(async (db) => {
+    const row = (
+      await db.query("SELECT * FROM orders WHERE id=$1 FOR UPDATE", [id])
+    ).rows[0];
+    if (!row) throw new HttpError(404, "Không tìm thấy đơn hàng.", "NOT_FOUND");
+    requireOrderScope(user, row.seller_id);
+
+    // Hoàn lại tồn kho nếu đơn chưa bị hủy
+    if (row.payment_status !== "cancelled") {
+      const items = [...row.items].sort((a, b) =>
+        a.productId.localeCompare(b.productId),
+      );
+      for (const item of items)
+        if (item.trackedStock)
+          await db.query(
+            "UPDATE products SET stock=stock+$1::integer WHERE id=$2 AND stock IS NOT NULL",
+            [item.quantity, item.productId],
+          );
+    }
+
+    await db.query("DELETE FROM order_messages WHERE order_id=$1", [id]);
+    await db.query("DELETE FROM preparation_tasks WHERE order_id=$1", [id]);
+    await db.query("DELETE FROM order_audit WHERE order_id=$1", [id]);
+
+    await db.query(`
+      DO $$
+      BEGIN
+        IF EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'payment_requests') THEN
+          DELETE FROM payment_requests WHERE order_id = '${id}';
+        END IF;
+        IF EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'payment_receipts') THEN
+          DELETE FROM payment_receipts WHERE order_id = '${id}';
+        END IF;
+      END $$;
+    `).catch(() => undefined);
+
+    await db.query("DELETE FROM orders WHERE id=$1", [id]);
+    return { success: true, id };
+  });
+}
+
+export async function clearAllOrders(
+  user: User,
+): Promise<{ success: boolean; count: number }> {
+  requireAdmin(user);
+  return transaction(async (db) => {
+    const { rows: uncancelledOrders } = await db.query(
+      "SELECT items FROM orders WHERE payment_status <> 'cancelled'",
+    );
+    for (const order of uncancelledOrders) {
+      if (Array.isArray(order.items)) {
+        for (const item of order.items) {
+          if (item.trackedStock && item.productId && item.quantity) {
+            await db.query(
+              "UPDATE products SET stock=stock+$1::integer WHERE id=$2 AND stock IS NOT NULL",
+              [item.quantity, item.productId],
+            );
+          }
+        }
+      }
+    }
+
+    await db.query("DELETE FROM order_messages");
+    await db.query("DELETE FROM preparation_tasks");
+    await db.query("DELETE FROM order_audit");
+
+    await db.query(`
+      DO $$
+      BEGIN
+        IF EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'payment_requests') THEN
+          DELETE FROM payment_requests;
+        END IF;
+        IF EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'payment_receipts') THEN
+          DELETE FROM payment_receipts;
+        END IF;
+      END $$;
+    `).catch(() => undefined);
+
+    const result = await db.query("DELETE FROM orders");
+    return { success: true, count: result.rowCount || 0 };
+  });
+}
+

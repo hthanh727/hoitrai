@@ -10,7 +10,7 @@ import {
 } from "../../server/catalog";
 import { configurationStatus } from "../../server/config";
 import { HttpError } from "../../server/errors";
-import { cancelOrder, confirmOrder, createOrder } from "../../server/orders";
+import { cancelOrder, clearAllOrders, confirmOrder, createOrder, deleteOrder } from "../../server/orders";
 import { addOrderMessage, updatePreparation } from "../../server/workflow";
 import { createUser, listUsers, updateUser } from "../../server/users";
 import {
@@ -26,6 +26,7 @@ import {
   messageSchema,
   userSchema,
   userPatchSchema,
+  uuidSchema,
 } from "../../server/validation";
 
 const json = (
@@ -87,7 +88,7 @@ export default async function handler(request: Request): Promise<Response> {
     const method = request.method.toUpperCase();
     if (method === "GET" && path === "/health")
       return json({ configured: configurationStatus() });
-    if (!["GET", "POST", "PATCH", "PUT"].includes(method))
+    if (!["GET", "POST", "PATCH", "PUT", "DELETE"].includes(method))
       throw new HttpError(
         405,
         "Phương thức không được hỗ trợ.",
@@ -123,7 +124,7 @@ export default async function handler(request: Request): Promise<Response> {
       return json({
         user: await updateUser(
           user,
-          z.string().uuid().parse(account[1]),
+          uuidSchema.parse(account[1]),
           await body(request, userPatchSchema),
         ),
       });
@@ -132,7 +133,7 @@ export default async function handler(request: Request): Promise<Response> {
       return json({
         task: await updatePreparation(
           user,
-          z.string().uuid().parse(preparation[1]),
+          uuidSchema.parse(preparation[1]),
           await body(request, preparationSchema),
         ),
       });
@@ -142,7 +143,7 @@ export default async function handler(request: Request): Promise<Response> {
         {
           message: await addOrderMessage(
             user,
-            z.string().uuid().parse(message[1]),
+            uuidSchema.parse(message[1]),
             await body(request, messageSchema),
           ),
         },
@@ -175,9 +176,16 @@ export default async function handler(request: Request): Promise<Response> {
         { order: await createOrder(user, await body(request, orderSchema)) },
         201,
       );
+    if ((path === "/orders" && method === "DELETE") || (path === "/orders/clear" && method === "POST"))
+      return json({ result: await clearAllOrders(user) });
+    const orderDelete = path.match(/^\/orders\/([^/]+)$/);
+    if (orderDelete && method === "DELETE") {
+      const id = uuidSchema.parse(orderDelete[1]);
+      return json({ result: await deleteOrder(user, id) });
+    }
     const resource = path.match(/^\/(products|sellers)\/([^/]+)$/);
     if (resource && method === "PATCH") {
-      const id = z.string().uuid().parse(resource[2]);
+      const id = uuidSchema.parse(resource[2]);
       return resource[1] === "products"
         ? json({
             product: await updateProduct(
@@ -196,7 +204,7 @@ export default async function handler(request: Request): Promise<Response> {
     }
     const orderAction = path.match(/^\/orders\/([^/]+)\/(confirm|cancel)$/);
     if (orderAction && method === "POST") {
-      const id = z.string().uuid().parse(orderAction[1]);
+      const id = uuidSchema.parse(orderAction[1]);
       if (orderAction[2] === "cancel")
         return json({ order: await cancelOrder(user, id) });
       const input = await body(request, confirmSchema);
@@ -206,10 +214,14 @@ export default async function handler(request: Request): Promise<Response> {
   } catch (error) {
     if (error instanceof HttpError)
       return json({ error: error.message, code: error.code }, error.status);
-    if (error instanceof ZodError)
+    if (error instanceof ZodError) {
+      console.error("Zod validation error:", error.issues);
+      const details = error.issues
+        .map((issue) => `${issue.path.join(".") || "Dữ liệu"}: ${issue.message}`)
+        .join("; ");
       return json(
         {
-          error: "Dữ liệu không hợp lệ. Kiểm tra các trường đã nhập.",
+          error: `Dữ liệu không hợp lệ. ${details}`,
           code: "VALIDATION_ERROR",
           fields: error.issues.map((issue) => ({
             path: issue.path.join("."),
@@ -218,6 +230,7 @@ export default async function handler(request: Request): Promise<Response> {
         },
         400,
       );
+    }
     const dbCode = (error as { code?: string }).code;
     if (dbCode === "23505")
       return json(

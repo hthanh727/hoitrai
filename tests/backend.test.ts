@@ -412,6 +412,24 @@ describe("manual bank transfer confirmation", () => {
       ).rows[0].payment_status,
     ).toBe("cancelled");
   });
+  it("allows deleting an individual order and clearing all orders", async () => {
+    const order1 = (await order()).data.order;
+    const order2 = (await order()).data.order;
+    expect((await db.query("SELECT id FROM orders")).rows).toHaveLength(2);
+
+    // Delete single order
+    const del1 = await call(`/orders/${order1.id}`, "DELETE");
+    expect(del1.status).toBe(200);
+    expect(del1.data.result.success).toBe(true);
+    expect((await db.query("SELECT id FROM orders WHERE id=$1", [order1.id])).rows).toHaveLength(0);
+    expect((await db.query("SELECT id FROM orders WHERE id=$1", [order2.id])).rows).toHaveLength(1);
+
+    // Clear all orders
+    const clearRes = await call("/orders/clear", "POST");
+    expect(clearRes.status).toBe(200);
+    expect(clearRes.data.result.success).toBe(true);
+    expect((await db.query("SELECT id FROM orders")).rows).toHaveLength(0);
+  });
 });
 
 it("keeps CA verification despite sslmode=require in the supplied Aiven URL", () => {

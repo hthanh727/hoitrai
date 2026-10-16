@@ -18,9 +18,17 @@ export const usernameSchema = z
 export const loginSchema = z
   .object({ username: usernameSchema, password: z.string().min(1).max(72) })
   .strict();
+export const uuidSchema = z
+  .string()
+  .trim()
+  .regex(
+    /^[0-9a-fA-F]{8}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{12}$/,
+    "Mã định danh không hợp lệ",
+  );
+
 const productFields = z
   .object({
-    sellerId: z.string().uuid(),
+    sellerId: uuidSchema,
     name: z.string().trim().min(1).max(120),
     category: z.string().trim().min(1).max(60),
     department: z.enum(["food", "handmade", "drinks"]).optional(),
@@ -78,7 +86,7 @@ export const settingsSchema = z
   );
 export const orderSchema = z
   .object({
-    sellerId: z.string().uuid().nullable().optional(),
+    sellerId: uuidSchema.nullable().optional(),
     customerName: z.string().trim().max(120).default("Khách lẻ"),
     note: z.string().trim().max(500).default(""),
     paymentMethod: z.enum(["cash", "transfer"]),
@@ -86,7 +94,7 @@ export const orderSchema = z
       .array(
         z
           .object({
-            productId: z.string().uuid(),
+            productId: uuidSchema,
             quantity: z.number().int().min(1).max(999),
           })
           .strict(),
@@ -115,7 +123,7 @@ const userFields = z.object({
   email: z.string().trim().email().max(120).nullable().optional(),
   password: passwordSchema,
   role: z.enum(["admin", "cashier", "sales", "drinks", "seller"]),
-  sellerId: z.string().uuid().nullable().optional(),
+  sellerId: uuidSchema.nullable().optional(),
   active: z.boolean(),
 }).strict();
 export const userSchema = userFields.extend({ active: z.boolean().default(true) }).refine(

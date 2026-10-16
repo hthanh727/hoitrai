@@ -1086,6 +1086,40 @@ export async function demoRequest<T>(
   ) {
     const [, , orderId, action] = route.split("/");
     response = { order: transitionOrder(state, orderId, action, body) };
+  } else if (method === "DELETE" && /^\/orders\/[^/]+$/.test(route)) {
+    const id = route.split("/")[2];
+    const index = state.orders.findIndex((o) => o.id === id);
+    if (index < 0) throw new Error("Không tìm thấy đơn.");
+    const order = state.orders[index];
+    if (order.paymentStatus !== "cancelled") {
+      for (const item of order.items) {
+        const prod = state.products.find((p) => p.id === item.productId);
+        if (prod && prod.stock !== null) prod.stock += item.quantity;
+      }
+    }
+    state.orders.splice(index, 1);
+    state.tasks = state.tasks.filter((t) => t.orderId !== id);
+    state.messages = state.messages.filter((m) => m.orderId !== id);
+    response = { result: { success: true, id } };
+  } else if (
+    (method === "DELETE" && route === "/orders") ||
+    (method === "POST" && route === "/orders/clear")
+  ) {
+    if (state.user.role !== "admin")
+      throw new Error("Chỉ quản trị viên mới được xóa tất cả đơn.");
+    for (const order of state.orders) {
+      if (order.paymentStatus !== "cancelled") {
+        for (const item of order.items) {
+          const prod = state.products.find((p) => p.id === item.productId);
+          if (prod && prod.stock !== null) prod.stock += item.quantity;
+        }
+      }
+    }
+    const count = state.orders.length;
+    state.orders = [];
+    state.tasks = [];
+    state.messages = [];
+    response = { result: { success: true, count } };
   } else {
     throw new Error("Chức năng này không có trong bản dùng thử.");
   }

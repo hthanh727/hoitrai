@@ -2976,10 +2976,28 @@ function PaymentModal({
   const [busy, setBusy] = useState(false),
     [cash, setCash] = useState(String(order.cashReceived || order.total)),
     [confirming, setConfirming] = useState<"manual" | "cancel" | null>(null),
-    [qrFailed, setQrFailed] = useState(false);
+    [qrFailed, setQrFailed] = useState(false),
+    [deleting, setDeleting] = useState(false),
+    [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const bank = order.bankDetails || settings;
   const transferContent = order.code;
   const qr = qrUrl(order, { ...settings, ...bank });
+
+  async function handleDeleteOrder() {
+    setDeleting(true);
+    try {
+      await api("/orders/" + order.id, { method: "DELETE" });
+      notify("Đã xóa vĩnh viễn đơn hàng " + order.code + ".");
+      onClose();
+      await refresh();
+    } catch (e) {
+      notify((e as Error).message, true);
+    } finally {
+      setDeleting(false);
+      setShowDeleteConfirm(false);
+    }
+  }
+
   async function action(kind: "confirm" | "cancel") {
     setBusy(true);
     try {
@@ -3291,6 +3309,26 @@ function PaymentModal({
               )}
             </>
           )}
+          {canManagePayment && (
+            <div
+              style={{
+                marginTop: 16,
+                borderTop: "1px dashed var(--line)",
+                paddingTop: 12,
+                textAlign: "center",
+              }}
+            >
+              <button
+                type="button"
+                disabled={busy || deleting}
+                className="danger-text btn text small"
+                onClick={() => setShowDeleteConfirm(true)}
+              >
+                <Trash2 size={14} style={{ marginRight: 6 }} />
+                Xóa vĩnh viễn đơn hàng này
+              </button>
+            </div>
+          )}
         </section>
       </div>
       {order.paymentStatus === "paid" && (
@@ -3300,6 +3338,74 @@ function PaymentModal({
           notify={notify}
           refresh={refresh}
         />
+      )}
+
+      {showDeleteConfirm && (
+        <div
+          className="modal-backdrop"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget && !deleting)
+              setShowDeleteConfirm(false);
+          }}
+        >
+          <div
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            style={{ maxWidth: 420 }}
+          >
+            <div className="modal-header">
+              <div>
+                <h2 style={{ color: "#dc2626" }}>Xác nhận xóa đơn</h2>
+                <p>
+                  {order.code} · {order.customerName || "Khách lẻ"}
+                </p>
+              </div>
+              <button
+                className="icon-btn"
+                onClick={() => setShowDeleteConfirm(false)}
+                disabled={deleting}
+                aria-label="Đóng"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <div className="modal-form">
+              <p style={{ lineHeight: 1.6 }}>
+                Bạn có chắc chắn muốn xóa vĩnh viễn đơn hàng{" "}
+                <strong>{order.code}</strong>?
+              </p>
+              <p style={{ fontSize: 12, color: "#6b7280", marginTop: 8 }}>
+                Phiếu chuẩn bị liên quan và các tin nhắn của đơn này cũng sẽ bị xóa. Tồn kho các món (nếu có theo dõi) sẽ được hoàn lại.
+              </p>
+              <div
+                style={{
+                  display: "flex",
+                  gap: 10,
+                  justifyContent: "flex-end",
+                  marginTop: 16,
+                }}
+              >
+                <button
+                  type="button"
+                  className="btn secondary"
+                  onClick={() => setShowDeleteConfirm(false)}
+                  disabled={deleting}
+                >
+                  Hủy
+                </button>
+                <button
+                  type="button"
+                  className="btn danger"
+                  onClick={handleDeleteOrder}
+                  disabled={deleting}
+                >
+                  {deleting ? "Đang xóa…" : "Xác nhận xóa đơn"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </Modal>
   );

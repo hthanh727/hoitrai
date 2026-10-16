@@ -11,6 +11,7 @@ import {
   RefreshCw,
   Send,
   ShieldCheck,
+  Trash2,
   Users,
   X,
 } from "lucide-react";
@@ -305,11 +306,18 @@ function downloadHistory(orders: Order[], data: Bootstrap) {
 export function OrderHistory({
   data,
   onOrder,
+  notify,
+  refresh,
 }: SharedProps & { onOrder: (id: string) => void }) {
   const [filters, setFilters] = useState<HistoryFilters>({
     ...emptyHistoryFilters,
   });
   const [page, setPage] = useState(1);
+  const [clearing, setClearing] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [orderToDelete, setOrderToDelete] = useState<Order | null>(null);
+
   const orders = useMemo(() => filterHistory(data, filters), [data, filters]);
   const summary = historySummary(orders);
   const pageSize = 20;
@@ -325,6 +333,45 @@ export function OrderHistory({
         (order) => order.id === task.orderId && order.paymentStatus === "paid",
       ),
   );
+
+  async function confirmDelete(order: Order) {
+    if (deletingId) return;
+    setDeletingId(order.id);
+    try {
+      await api(`/orders/${order.id}`, { method: "DELETE" });
+      notify(`Đã xóa đơn hàng ${order.code}.`);
+      setOrderToDelete(null);
+      await refresh(true);
+    } catch (error) {
+      notify(
+        error instanceof Error ? error.message : "Chưa xóa được đơn hàng.",
+        true,
+      );
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
+  async function confirmClearAll() {
+    if (clearing) return;
+    setClearing(true);
+    try {
+      await api("/orders/clear", { method: "POST" });
+      notify("Đã xóa toàn bộ đơn hàng thành công.");
+      setShowClearConfirm(false);
+      await refresh(true);
+    } catch (error) {
+      notify(
+        error instanceof Error
+          ? error.message
+          : "Chưa xóa được toàn bộ đơn hàng.",
+        true,
+      );
+    } finally {
+      setClearing(false);
+    }
+  }
+
   function change<K extends keyof HistoryFilters>(
     key: K,
     value: HistoryFilters[K],
@@ -349,14 +396,27 @@ export function OrderHistory({
               : "Lọc đơn, theo dõi thanh toán và tiến độ chuẩn bị."}
           </p>
         </div>
-        <button
-          className="btn secondary small"
-          disabled={!orders.length || !!invalidRange}
-          onClick={() => downloadHistory(orders, data)}
-        >
-          <Download size={15} />
-          Xuất CSV ({orders.length})
-        </button>
+        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}>
+          {data.user.role === "admin" && data.orders.length > 0 && (
+            <button
+              className="btn danger small"
+              onClick={() => setShowClearConfirm(true)}
+              disabled={clearing}
+              title="Xóa vĩnh viễn toàn bộ đơn hàng trong hệ thống"
+            >
+              <Trash2 size={15} />
+              {clearing ? "Đang xóa…" : `Xóa tất cả đơn (${data.orders.length})`}
+            </button>
+          )}
+          <button
+            className="btn secondary small"
+            disabled={!orders.length || !!invalidRange}
+            onClick={() => downloadHistory(orders, data)}
+          >
+            <Download size={15} />
+            Xuất CSV ({orders.length})
+          </button>
+        </div>
       </div>
       <div className="op-stat-grid" aria-label="Thống kê đơn theo bộ lọc">
         <div>
@@ -581,6 +641,9 @@ export function OrderHistory({
               <th>{scoped ? "Số món của ban" : "Tổng tiền"}</th>
               <th>Thanh toán</th>
               <th>Chuẩn bị</th>
+              {["admin", "cashier", "seller"].includes(data.user.role) && (
+                <th>Thao tác</th>
+              )}
             </tr>
           </thead>
           <tbody>
@@ -638,6 +701,21 @@ export function OrderHistory({
                       {preparationLabel(orderPreparation(order, data))}
                     </span>
                   </td>
+                  {["admin", "cashier", "seller"].includes(data.user.role) && (
+                    <td>
+                      <button
+                        type="button"
+                        className="icon-btn danger"
+                        onClick={() => setOrderToDelete(order)}
+                        title={`Xóa đơn ${order.code}`}
+                        aria-label={`Xóa đơn ${order.code}`}
+                        disabled={deletingId === order.id}
+                        style={{ color: "#ef4444" }}
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </td>
+                  )}
                 </tr>
               ))}
           </tbody>
@@ -679,6 +757,149 @@ export function OrderHistory({
           </button>
         </div>
       </div>
+
+      {showClearConfirm && (
+        <div
+          className="modal-backdrop"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget && !clearing)
+              setShowClearConfirm(false);
+          }}
+        >
+          <div
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            style={{ maxWidth: 460 }}
+          >
+            <div className="modal-header">
+              <div>
+                <h2 style={{ color: "#dc2626" }}>Xóa tất cả đơn hàng?</h2>
+                <p>Thao tác dành riêng cho Quản trị viên</p>
+              </div>
+              <button
+                className="icon-btn"
+                onClick={() => setShowClearConfirm(false)}
+                disabled={clearing}
+                aria-label="Đóng"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <div className="modal-form">
+              <p style={{ lineHeight: 1.6 }}>
+                Bạn có chắc chắn muốn <strong>xóa TOÀN BỘ {data.orders.length} đơn hàng</strong> trong hệ thống không?
+              </p>
+              <div
+                className="notice compact"
+                style={{
+                  borderColor: "#fecaca",
+                  background: "#fef2f2",
+                  color: "#991b1b",
+                  margin: "14px 0",
+                }}
+              >
+                <span>
+                  ⚠️ Toàn bộ đơn hàng, phần việc chuẩn bị của các ban và tin nhắn trao đổi sẽ bị xóa sạch. Thao tác này <strong>KHÔNG THỂ khôi phục</strong>.
+                </span>
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  gap: "10px",
+                  justifyContent: "flex-end",
+                  marginTop: "16px",
+                }}
+              >
+                <button
+                  type="button"
+                  className="btn secondary"
+                  onClick={() => setShowClearConfirm(false)}
+                  disabled={clearing}
+                >
+                  Hủy bỏ
+                </button>
+                <button
+                  type="button"
+                  className="btn danger"
+                  onClick={confirmClearAll}
+                  disabled={clearing}
+                >
+                  {clearing ? "Đang xóa toàn bộ…" : "Đồng ý xóa sạch tất cả"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {orderToDelete && (
+        <div
+          className="modal-backdrop"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget && !deletingId)
+              setOrderToDelete(null);
+          }}
+        >
+          <div
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            style={{ maxWidth: 420 }}
+          >
+            <div className="modal-header">
+              <div>
+                <h2 style={{ color: "#dc2626" }}>Xác nhận xóa đơn</h2>
+                <p>
+                  {orderToDelete.code} · {orderToDelete.customerName || "Khách lẻ"}
+                </p>
+              </div>
+              <button
+                className="icon-btn"
+                onClick={() => setOrderToDelete(null)}
+                disabled={!!deletingId}
+                aria-label="Đóng"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <div className="modal-form">
+              <p style={{ lineHeight: 1.6 }}>
+                Bạn có chắc chắn muốn xóa vĩnh viễn đơn hàng{" "}
+                <strong>{orderToDelete.code}</strong>?
+              </p>
+              <p style={{ fontSize: 12, color: "#6b7280", marginTop: 8 }}>
+                Phiếu chuẩn bị liên quan và các tin nhắn của đơn này cũng sẽ bị xóa. Tồn kho các món (nếu có theo dõi) sẽ được hoàn lại.
+              </p>
+              <div
+                style={{
+                  display: "flex",
+                  gap: "10px",
+                  justifyContent: "flex-end",
+                  marginTop: "16px",
+                }}
+              >
+                <button
+                  type="button"
+                  className="btn secondary"
+                  onClick={() => setOrderToDelete(null)}
+                  disabled={!!deletingId}
+                >
+                  Hủy
+                </button>
+                <button
+                  type="button"
+                  className="btn danger"
+                  onClick={() => confirmDelete(orderToDelete)}
+                  disabled={!!deletingId}
+                >
+                  {deletingId ? "Đang xóa…" : "Xác nhận xóa đơn"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
@@ -875,11 +1096,58 @@ export function PreparationBoard({
   const [search, setSearch] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [openThread, setOpenThread] = useState<string | null>(null);
+  const [clearing, setClearing] = useState(false);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [taskOrderToDelete, setTaskOrderToDelete] = useState<{
+    id: string;
+    code: string;
+    customerName?: string;
+  } | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 30000);
     return () => clearInterval(timer);
   }, []);
+
+  async function confirmClearAll() {
+    if (clearing) return;
+    setClearing(true);
+    try {
+      await api("/orders/clear", { method: "POST" });
+      notify("Đã xóa toàn bộ đơn hàng thành công.");
+      setShowClearConfirm(false);
+      await refresh(true);
+    } catch (error) {
+      notify(
+        error instanceof Error
+          ? error.message
+          : "Chưa xóa được toàn bộ đơn hàng.",
+        true,
+      );
+    } finally {
+      setClearing(false);
+    }
+  }
+
+  async function confirmDeleteTaskOrder(orderId: string, orderCode: string) {
+    if (deletingId) return;
+    setDeletingId(orderId);
+    try {
+      await api(`/orders/${orderId}`, { method: "DELETE" });
+      notify(`Đã xóa đơn hàng ${orderCode}.`);
+      setTaskOrderToDelete(null);
+      await refresh(true);
+    } catch (error) {
+      notify(
+        error instanceof Error ? error.message : "Chưa xóa được đơn hàng.",
+        true,
+      );
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
   const scopedTasks = (data.tasks || []).filter(
     (task) =>
       allowedDepartments(data.user.role).includes(task.department) &&
@@ -942,10 +1210,23 @@ export function PreparationBoard({
               : "Đơn đã thanh toán được chuyển tới đúng ban. Cập nhật tiến độ để thu ngân biết khi món sẵn sàng."}
           </p>
         </div>
-        <button className="btn secondary small" onClick={() => refresh(true)}>
-          <RefreshCw size={15} />
-          Cập nhật
-        </button>
+        <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+          {data.user.role === "admin" && data.orders.length > 0 && (
+            <button
+              className="btn danger small"
+              onClick={() => setShowClearConfirm(true)}
+              disabled={clearing}
+              title="Xóa vĩnh viễn toàn bộ đơn hàng trong hệ thống"
+            >
+              <Trash2 size={15} />
+              {clearing ? "Đang xóa…" : `Xóa tất cả đơn (${data.orders.length})`}
+            </button>
+          )}
+          <button className="btn secondary small" onClick={() => refresh(true)}>
+            <RefreshCw size={15} />
+            Cập nhật
+          </button>
+        </div>
       </div>
       <div className="op-prep-counters">
         {preparationStates.map((value) => (
@@ -1111,6 +1392,25 @@ export function PreparationBoard({
                   <MessageCircle size={14} />
                   Trao đổi{messages.length ? ` (${messages.length})` : ""}
                 </button>
+                {["admin", "cashier"].includes(data.user.role) && (
+                  <button
+                    type="button"
+                    className="btn secondary small danger-text"
+                    title={`Xóa đơn ${task.orderCode}`}
+                    onClick={() =>
+                      setTaskOrderToDelete({
+                        id: task.orderId,
+                        code: task.orderCode,
+                        customerName: task.customerName,
+                      })
+                    }
+                    disabled={deletingId === task.orderId}
+                    style={{ marginLeft: "auto" }}
+                  >
+                    <Trash2 size={14} />
+                    Xóa đơn
+                  </button>
+                )}
               </div>
               {openThread === task.id && (
                 <OrderThread
@@ -1133,6 +1433,155 @@ export function PreparationBoard({
             Đơn đã thanh toán sẽ tự xuất hiện tại ban phụ trách. Thử đổi bộ lọc
             để xem đơn đã giao.
           </p>
+        </div>
+      )}
+
+      {showClearConfirm && (
+        <div
+          className="modal-backdrop"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget && !clearing)
+              setShowClearConfirm(false);
+          }}
+        >
+          <div
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            style={{ maxWidth: 460 }}
+          >
+            <div className="modal-header">
+              <div>
+                <h2 style={{ color: "#dc2626" }}>Xóa tất cả đơn hàng?</h2>
+                <p>Thao tác dành riêng cho Quản trị viên</p>
+              </div>
+              <button
+                className="icon-btn"
+                onClick={() => setShowClearConfirm(false)}
+                disabled={clearing}
+                aria-label="Đóng"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <div className="modal-form">
+              <p style={{ lineHeight: 1.6 }}>
+                Bạn có chắc chắn muốn <strong>xóa TOÀN BỘ {data.orders.length} đơn hàng</strong> trong hệ thống không?
+              </p>
+              <div
+                className="notice compact"
+                style={{
+                  borderColor: "#fecaca",
+                  background: "#fef2f2",
+                  color: "#991b1b",
+                  margin: "14px 0",
+                }}
+              >
+                <span>
+                  ⚠️ Toàn bộ đơn hàng, phần việc chuẩn bị của các ban và tin nhắn trao đổi sẽ bị xóa sạch. Thao tác này <strong>KHÔNG THỂ khôi phục</strong>.
+                </span>
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  gap: "10px",
+                  justifyContent: "flex-end",
+                  marginTop: "16px",
+                }}
+              >
+                <button
+                  type="button"
+                  className="btn secondary"
+                  onClick={() => setShowClearConfirm(false)}
+                  disabled={clearing}
+                >
+                  Hủy bỏ
+                </button>
+                <button
+                  type="button"
+                  className="btn danger"
+                  onClick={confirmClearAll}
+                  disabled={clearing}
+                >
+                  {clearing ? "Đang xóa toàn bộ…" : "Đồng ý xóa sạch tất cả"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {taskOrderToDelete && (
+        <div
+          className="modal-backdrop"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget && !deletingId)
+              setTaskOrderToDelete(null);
+          }}
+        >
+          <div
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            style={{ maxWidth: 420 }}
+          >
+            <div className="modal-header">
+              <div>
+                <h2 style={{ color: "#dc2626" }}>Xác nhận xóa đơn</h2>
+                <p>
+                  {taskOrderToDelete.code} ·{" "}
+                  {taskOrderToDelete.customerName || "Khách lẻ"}
+                </p>
+              </div>
+              <button
+                className="icon-btn"
+                onClick={() => setTaskOrderToDelete(null)}
+                disabled={!!deletingId}
+                aria-label="Đóng"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <div className="modal-form">
+              <p style={{ lineHeight: 1.6 }}>
+                Bạn có chắc chắn muốn xóa vĩnh viễn đơn hàng{" "}
+                <strong>{taskOrderToDelete.code}</strong>?
+              </p>
+              <p style={{ fontSize: 12, color: "#6b7280", marginTop: 8 }}>
+                Phiếu chuẩn bị liên quan và các tin nhắn của đơn này cũng sẽ bị xóa. Tồn kho các món (nếu có theo dõi) sẽ được hoàn lại.
+              </p>
+              <div
+                style={{
+                  display: "flex",
+                  gap: "10px",
+                  justifyContent: "flex-end",
+                  marginTop: "16px",
+                }}
+              >
+                <button
+                  type="button"
+                  className="btn secondary"
+                  onClick={() => setTaskOrderToDelete(null)}
+                  disabled={!!deletingId}
+                >
+                  Hủy
+                </button>
+                <button
+                  type="button"
+                  className="btn danger"
+                  onClick={() =>
+                    confirmDeleteTaskOrder(
+                      taskOrderToDelete.id,
+                      taskOrderToDelete.code,
+                    )
+                  }
+                  disabled={!!deletingId}
+                >
+                  {deletingId ? "Đang xóa…" : "Xác nhận xóa đơn"}
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </section>
