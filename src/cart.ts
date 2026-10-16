@@ -1,3 +1,5 @@
+import { randomUUID } from "./utils";
+
 export type OrderSubmission = {
   sellerId?: string;
   customerName: string;
@@ -21,7 +23,7 @@ export function freshDraft(): Draft {
     items: {},
     customerName: "",
     note: "",
-    key: crypto.randomUUID(),
+    key: randomUUID(),
     method: "cash",
     cash: "",
   };

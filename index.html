@@ -10,6 +10,20 @@
       content="Trại Vui — quản lý bán hàng, gian hàng và thanh toán tại hội trại."
     />
     <title>Trại Vui · Bán hàng hội trại</title>
+    <script>
+      if (typeof window !== "undefined") {
+        if (!window.crypto) window.crypto = {};
+        if (typeof window.crypto.randomUUID !== "function") {
+          window.crypto.randomUUID = function() {
+            return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, function(c) {
+              var r = (Math.random() * 16) | 0;
+              var v = c === "x" ? r : (r & 0x3) | 0x8;
+              return v.toString(16);
+            });
+          };
+        }
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

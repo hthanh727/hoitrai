@@ -1400,17 +1400,15 @@ export function AccountsPanel({ data, notify, refresh }: SharedProps) {
                   setDraft({ ...draft, password: event.target.value })
                 }
                 required={editing === "new"}
-                minLength={12}
+                minLength={6}
                 maxLength={72}
-                pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9]).{12,72}"
-                title="Ít nhất 12 ký tự, có chữ hoa, chữ thường và số."
                 autoComplete="new-password"
                 disabled={busy}
               />
               <small id="account-password-hint">
                 {editing === "new"
-                  ? "Ít nhất 12 ký tự, có chữ hoa, chữ thường và số."
-                  : "Để trống để giữ mật khẩu. Mật khẩu mới cần 12 ký tự, chữ hoa, chữ thường và số."}
+                  ? "Tối thiểu 6 ký tự."
+                  : "Để trống để giữ mật khẩu. Mật khẩu mới cần tối thiểu 6 ký tự."}
               </small>
             </label>
             <label className="op-field">

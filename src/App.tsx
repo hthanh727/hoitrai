@@ -54,7 +54,7 @@ import type {
   User,
 } from "./types";
 import { api, ApiError, isDemo, setDemo } from "./api";
-import { money, time, localDay, qrUrl, exportOrders } from "./utils";
+import { money, time, localDay, qrUrl, exportOrders, randomUUID } from "./utils";
 import { resetDemo } from "./demo";
 import {
   OrderHistory,
@@ -1475,11 +1475,11 @@ function SalePanel({
     locked = busy || !!draft.submission;
   const setMethod = (method: Draft["method"]) =>
     setDraft((d) =>
-      d.method === method ? d : { ...d, method, key: crypto.randomUUID() },
+      d.method === method ? d : { ...d, method, key: randomUUID() },
     );
   const setCash = (cash: string) =>
     setDraft((d) =>
-      d.cash === cash ? d : { ...d, cash, key: crypto.randomUUID() },
+      d.cash === cash ? d : { ...d, cash, key: randomUUID() },
     );
   const products = data.products.filter(
     (p) =>
@@ -1516,7 +1516,7 @@ function SalePanel({
       const items = { ...d.items };
       if (quantity <= 0) delete items[id];
       else items[id] = quantity;
-      return { ...d, items, key: crypto.randomUUID() };
+      return { ...d, items, key: randomUUID() };
     });
   }
   async function checkout() {
@@ -1729,7 +1729,7 @@ function SalePanel({
                       setDraft((d) => {
                         const items = { ...d.items };
                         delete items[p.id];
-                        return { ...d, items, key: crypto.randomUUID() };
+                        return { ...d, items, key: randomUUID() };
                       })
                     }
                   >
@@ -1757,7 +1757,7 @@ function SalePanel({
               setDraft((d) => ({
                 ...d,
                 customerName: e.target.value,
-                key: crypto.randomUUID(),
+                key: randomUUID(),
               }))
             }
           />
@@ -1771,7 +1771,7 @@ function SalePanel({
               setDraft((d) => ({
                 ...d,
                 note: e.target.value,
-                key: crypto.randomUUID(),
+                key: randomUUID(),
               }))
             }
           />

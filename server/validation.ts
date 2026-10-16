@@ -4,15 +4,11 @@ const money = z.number().int().min(0).max(1_000_000_000);
 const color = z.string().regex(/^#[0-9a-fA-F]{6}$/);
 export const passwordSchema = z
   .string()
-  .min(12)
+  .min(6)
   .max(72)
   .refine(
     (value) => Buffer.byteLength(value, "utf8") <= 72,
     "Mật khẩu tối đa 72 byte.",
-  )
-  .refine(
-    (value) => /[a-z]/.test(value) && /[A-Z]/.test(value) && /\d/.test(value),
-    "Mật khẩu cần chữ hoa, chữ thường và số.",
   );
 export const usernameSchema = z
   .string()

@@ -12,7 +12,7 @@ import type {
   PreparationTask,
   OrderMessage,
 } from "./types";
-import { localDay } from "./utils";
+import { localDay, randomUUID } from "./utils";
 
 // This key contains only the browser's sample workspace. Live requests never use it.
 const STORAGE_KEY = "hoi-trai-pos:demo:v3";
@@ -52,7 +52,7 @@ function dispatchDemo(state: DemoState, order: Order) {
     )
       continue;
     state.tasks.push({
-      id: crypto.randomUUID(),
+      id: randomUUID(),
       orderId: order.id,
       department,
       status: "queued",
@@ -548,7 +548,7 @@ function productFields(
   const stock =
     body.stock === undefined ? (previous?.stock ?? null) : body.stock;
   return {
-    id: previous?.id ?? crypto.randomUUID(),
+    id: previous?.id ?? randomUUID(),
     sellerId: seller.id,
     name: textField(body.name ?? previous?.name, "Tên món", 120, true),
     category: textField(
@@ -580,7 +580,7 @@ function sellerFields(
   previous?: Seller,
 ): Seller {
   return {
-    id: previous?.id ?? crypto.randomUUID(),
+    id: previous?.id ?? randomUUID(),
     name: textField(body.name ?? previous?.name, "Tên gian hàng", 120, true),
     description: textField(
       body.description ?? previous?.description ?? "",
@@ -696,8 +696,8 @@ function newOrder(state: DemoState, body: Record<string, unknown>): Order {
   const now = new Date();
   const dateCode = localDay(now.toISOString()).replaceAll("-", "").slice(2);
   const order: Order = {
-    id: crypto.randomUUID(),
-    code: `HT${dateCode}${crypto.randomUUID().replaceAll("-", "").slice(0, 12).toUpperCase()}`,
+    id: randomUUID(),
+    code: `HT${dateCode}${randomUUID().replaceAll("-", "").slice(0, 12).toUpperCase()}`,
     sellerId:
       seller?.id ||
       (new Set(items.map((i) => i.sellerId)).size === 1
@@ -901,7 +901,7 @@ export async function demoRequest<T>(
         "Mật khẩu cần ít nhất 12 ký tự, chữ hoa, chữ thường và số.",
       );
     const user: ManagedUser = {
-      id: crypto.randomUUID(),
+      id: randomUUID(),
       name: textField(body.name, "Tên người dùng", 120, true),
       username,
       role,
@@ -1007,7 +1007,7 @@ export async function demoRequest<T>(
     )
       throw new Error("Chỉ trao đổi phần việc bán hàng.");
     const message: OrderMessage = {
-      id: crypto.randomUUID(),
+      id: randomUUID(),
       orderId: order.id,
       department,
       authorId: state.user.id,
