@@ -30,9 +30,9 @@ export function databaseConfig(env: NodeJS.ProcessEnv = process.env) {
   return {
     connectionString: url.toString(),
     ssl: { ca, rejectUnauthorized: true },
-    max: 4,
-    connectionTimeoutMillis: 8_000,
-    idleTimeoutMillis: 20_000,
+    max: 2,
+    connectionTimeoutMillis: 5_000,
+    idleTimeoutMillis: 5_000,
     statement_timeout: 15_000,
   };
 }

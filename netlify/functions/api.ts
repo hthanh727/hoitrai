@@ -245,6 +245,14 @@ export default async function handler(request: Request): Promise<Response> {
         },
         503,
       );
+    if (dbCode === "53300")
+      return json(
+        {
+          error: "Cơ sở dữ liệu đang có nhiều kết nối, vui lòng thử lại sau vài giây.",
+          code: "DB_BUSY",
+        },
+        503,
+      );
     // Do not log DB connection strings, passwords, or JWTs.
     console.error("API request failed", {
       code: dbCode ?? "INTERNAL_ERROR",
