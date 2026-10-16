@@ -17,41 +17,81 @@ import {
 } from "./validation";
 
 export async function bootstrap(user: User) {
-  const db = getPool();
-  const scope = user.role === "seller" ? user.sellerId : null;
-  const prep = isPreparationUser(user);
-  const departments = preparationDepartments(user);
-  const [sellers, products, orders, settings, tasks, messages, users] = await Promise.all([
-    db.query(
+  const pool = getPool();
+  const client = await pool.connect();
+  try {
+    const scope = user.role === "seller" ? user.sellerId : null;
+    const prep = isPreparationUser(user);
+    const departments = preparationDepartments(user);
+    const sellers = await client.query(
       "SELECT * FROM sellers WHERE ($1::uuid IS NULL OR id=$1) ORDER BY created_at,id",
       [scope],
-    ),
-    db.query(
+    );
+    const products = await client.query(
       "SELECT * FROM products WHERE ($1::uuid IS NULL OR seller_id=$1) ORDER BY created_at,id",
       [scope],
-    ),
-    db.query(
+    );
+    const orders = await client.query(
       "SELECT * FROM orders WHERE ($1::uuid IS NULL OR seller_id=$1) AND ($2::boolean=false OR payment_status='paid') ORDER BY created_at DESC,id",
       [scope, prep],
-    ),
-    db.query("SELECT * FROM settings WHERE id=1"),
-    db.query("SELECT t.* FROM preparation_tasks t JOIN orders o ON o.id=t.order_id WHERE o.payment_status='paid' AND ($1::uuid IS NULL OR o.seller_id=$1) ORDER BY t.created_at,t.id", [scope]),
-    db.query("SELECT m.* FROM order_messages m JOIN orders o ON o.id=m.order_id WHERE ($1::uuid IS NULL OR o.seller_id=$1) AND ($2::boolean=false OR o.payment_status='paid') ORDER BY m.created_at,m.id", [scope, prep]),
-    user.role === "admin" ? db.query("SELECT * FROM users ORDER BY created_at,id") : Promise.resolve({ rows: [] }),
-  ]);
-  const visibleOrders = orders.rows.map(mapOrder).filter((order) => !prep || order.items.some((item) => departments.includes(inferDepartment(item))));
-  const orderIds = new Set(visibleOrders.map((order) => order.id));
-  const currentSettings = mapSettings(settings.rows[0]);
-  return {
-    user,
-    sellers: sellers.rows.map(mapSeller),
-    products: prep ? [] : products.rows.map(mapProduct),
-    orders: visibleOrders.map((order) => projectPreparationOrder(user, order)),
-    settings: prep ? { ...currentSettings, bankBin: "", bankName: "", accountNumber: "", accountName: "" } : currentSettings,
-    tasks: tasks.rows.map(mapPreparation).filter((task) => !prep || departments.includes(task.department)).map((task) => redactTask(user, task)),
-    messages: messages.rows.map(mapMessage).filter((message) => orderIds.has(message.orderId) && (!prep || message.department === null || departments.includes(message.department))),
-    ...(user.role === "admin" ? { users: users.rows.map(mapManagedUser) } : {}),
-  };
+    );
+    const settings = await client.query("SELECT * FROM settings WHERE id=1");
+    const tasks = await client.query(
+      "SELECT t.* FROM preparation_tasks t JOIN orders o ON o.id=t.order_id WHERE o.payment_status='paid' AND ($1::uuid IS NULL OR o.seller_id=$1) ORDER BY t.created_at,t.id",
+      [scope],
+    );
+    const messages = await client.query(
+      "SELECT m.* FROM order_messages m JOIN orders o ON o.id=m.order_id WHERE ($1::uuid IS NULL OR o.seller_id=$1) AND ($2::boolean=false OR o.payment_status='paid') ORDER BY m.created_at,m.id",
+      [scope, prep],
+    );
+    const users =
+      user.role === "admin"
+        ? await client.query("SELECT * FROM users ORDER BY created_at,id")
+        : { rows: [] };
+
+    const visibleOrders = orders.rows
+      .map(mapOrder)
+      .filter(
+        (order) =>
+          !prep ||
+          order.items.some((item) => departments.includes(inferDepartment(item))),
+      );
+    const orderIds = new Set(visibleOrders.map((order) => order.id));
+    const currentSettings = mapSettings(settings.rows[0]);
+    return {
+      user,
+      sellers: sellers.rows.map(mapSeller),
+      products: prep ? [] : products.rows.map(mapProduct),
+      orders: visibleOrders.map((order) => projectPreparationOrder(user, order)),
+      settings: prep
+        ? {
+            ...currentSettings,
+            bankBin: "",
+            bankName: "",
+            accountNumber: "",
+            accountName: "",
+          }
+        : currentSettings,
+      tasks: tasks.rows
+        .map(mapPreparation)
+        .filter((task) => !prep || departments.includes(task.department))
+        .map((task) => redactTask(user, task)),
+      messages: messages.rows
+        .map(mapMessage)
+        .filter(
+          (message) =>
+            orderIds.has(message.orderId) &&
+            (!prep ||
+              message.department === null ||
+              departments.includes(message.department)),
+        ),
+      ...(user.role === "admin"
+        ? { users: users.rows.map(mapManagedUser) }
+        : {}),
+    };
+  } finally {
+    client.release();
+  }
 }
 
 export async function createProduct(
